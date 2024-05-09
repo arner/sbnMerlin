@@ -1534,6 +1534,7 @@ firewall_config() {
 	lan_netmask="$(nvram get lan_netmask)"
 	lan_netaddr=$(convert_netaddr "$lan_ipaddr" "$lan_netmask")
 	wan0_ifname="$(nvram get wan0_ifname)"
+	wan0_gw_ifname="$(nvram get wan0_gw_ifname)"
 
 	loggerEx "Applying Ethernet Bridge IPv4 BROUTING rules for bridge($bri_name)."
 
@@ -1620,9 +1621,18 @@ firewall_config() {
 		fi
 
 		# Allow packet forwarding between bridge and wan (internet access).
-		iptables "$action" FORWARD -i "$bri_name" -o "$wan0_ifname" -j ACCEPT >/dev/null 2>&1
-		if [ $1 = create ] && [ $bri_allow_internet -eq $env_disable ]; then
-			iptables -D FORWARD -i "$bri_name" -o "$wan0_ifname" -j ACCEPT >/dev/null 2>&1
+		if [ "$wan0_gw_ifname" != "" ]; then
+			iptables "$action" FORWARD $(iptables -L FORWARD --line-numbers | grep WGCF | awk '{print $1 }') -i "$bri_name" -o "$wan0_gw_ifname" -j ACCEPT >/dev/null 2>&1
+			iptables "$action" FORWARD $(iptables -L FORWARD --line-numbers | grep WGSF | awk '{print $1 }') -i "$bri_name" -o "$wan0_gw_ifname" -j ACCEPT >/dev/null 2>&1
+			if [ $1 = create ] && [ $bri_allow_internet -eq $env_disable ]; then
+				iptables -D FORWARD -i "$bri_name" -o "$wan0_gw_ifname" -j ACCEPT >/dev/null 2>&1
+				iptables -D FORWARD -i "$bri_name" -o "$wan0_gw_ifname" -j ACCEPT >/dev/null 2>&1
+			fi
+		else
+			iptables "$action" FORWARD -i "$bri_name" -o "$wan0_ifname" -j ACCEPT >/dev/null 2>&1
+			if [ $1 = create ] && [ $bri_allow_internet -eq $env_disable ]; then
+				iptables -D FORWARD -i "$bri_name" -o "$wan0_ifname" -j ACCEPT >/dev/null 2>&1
+			fi
 		fi
 
 		# Forbid packets from bridge to be forwarded to other interfaces.
@@ -1698,6 +1708,7 @@ firewall_config() {
 	loggerEx "Ethernet Bridge and Packet Filtering setup complete for bridge($bri_name)."
 
 	unset wan0_ifname
+	unset wan0_gw_ifname
 	unset lan_netaddr
 	unset lan_netmask
 	unset lan_ipaddr
